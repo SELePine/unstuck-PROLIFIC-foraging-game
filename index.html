@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Foraging Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --arena-w: 960px;
+      --arena-h: 600px;
+      --bg: #f7f7f7;
+      --purple: #8b5cf6;
+      --orange: #fb923c;
+      --red: #ef4444;
+      --blue: #3b82f6;
+      --hud: rgba(0,0,0,0.7);
+      --banner: rgba(17,17,17,0.9);
+    }
+    html, body { margin: 0; padding: 0; background: var(--bg); font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #111; height: 100%; overflow: hidden; }
+    .screen { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+    .hidden { display: none !important; }
+    .column { max-width: 900px; padding: 24px; line-height: 1.35; }
+    h1, h2 { margin: 0 0 12px; }
+    p { margin: 8px 0; }
+    button { appearance: none; border: none; background: #111; color: #fff; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; letter-spacing: 0.3px; }
+    .center { text-align: center; }
+
+    #arenaWrap { position: relative; width: var(--arena-w); height: var(--arena-h); border: 2px solid #ddd; border-radius: 12px; background: #e8f5e9; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+    #arena { position: absolute; inset: 0; }
+
+    #tutorialBanner { position: absolute; top: 0; left: 0; right: 0; background: var(--banner); color: #fff; padding: 10px 14px; font-weight: 600; letter-spacing: .2px; z-index: 1001; text-align: center; }
+
+    .entity { position: absolute; width: 18px; height: 18px; transform: translate(-50%, -50%); border-radius: 4px; pointer-events: none; z-index: 6; }
+    #player { background: var(--red); box-shadow: 0 0 0 2px rgba(239,68,68,0.2); }
+    #bot { background: var(--blue); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+
+    .bush { position: absolute; width: 50px; height: 50px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8bc34a 0%, #689f38 60%, #4e8a3c 100%); border: 2px solid rgba(0,0,0,0.07); box-shadow: inset 0 4px 10px rgba(255,255,255,0.2), 0 2px 6px rgba(0,0,0,0.1); z-index: 2; }
+
+    .berry { position: absolute; width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 2px 3px rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.15); border: 1px solid rgba(0,0,0,0.08); z-index: 4; transform: translate(-50%, -50%); }
+    .berry.purple { background: var(--purple); }
+    .berry.orange { background: var(--orange); }
+
+    #hud { position: absolute; top: 10px; right: 10px; background: var(--hud); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 14px; z-index: 1000; display: flex; flex-direction: column; gap: 4px; min-width: 180px; }
+    #timer { position: absolute; top: 10px; left: 10px; background: var(--hud); color: #fff; padding: 8px 12px; border-radius: 8px; font-weight: 600; z-index: 1000; min-width: 120px; text-align: center; }
+
+    #overlayMsg { position: absolute; inset: 0; background: rgba(0,0,0,0.6); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 72px; font-weight: 800; z-index: 900; opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+    #overlayMsg.show { opacity: 1; pointer-events: auto; }
+
+    .floatText { position: absolute; transform: translate(-50%, -50%); font-weight: 800; font-size: 16px; text-shadow: 0 2px 6px rgba(0,0,0,0.3); animation: floatUp 1s ease-out forwards; z-index: 10000; pointer-events: none; }
+    .floatPlus { color: #16a34a; }
+    .floatMinus { color: #ef4444; }
+    @keyframes floatUp { from { opacity: 1; transform: translate(-50%, -50%) translateY(0); } to { opacity: 0; transform: translate(-50%, -50%) translateY(-40px); } }
+
+    #endWrap { width: min(900px, 92vw); background: #fff; border-radius: 12px; box-shadow: 0 16px 50px rgba(0,0,0,0.15); padding: 22px 20px 28px; }
+    .statGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin: 14px 0 10px; }
+    .card { background: #f9fafb; border-radius: 10px; padding: 12px 14px; border: 1px solid #e5e7eb; }
+    .label { font-size: 13px; color: #555; }
+    .value { font-size: 20px; font-weight: 800; margin-top: 6px; }
+    .muted { color: #666; font-size: 14px; }
+    .arrowBtn { margin: 18px auto 0; width: 56px; height: 56px; border-radius: 50%; background: #111; color: #fff; display: grid; place-items: center; font-size: 26px; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+    .arrowBtn.show { opacity: 1; pointer-events: auto; }
+  </style>
+</head>
+<body>
+
+  <!-- Intro Screen -->
+  <div id="introScreen" class="screen">
+    <div class="panel">
+      <div class="column">
+        <h1>Welcome to the foraging game!</h1>
+        <p>You (red square) and your partner (blue square) will collect berries from bushes. Use WASD to move. Purple berries earn points; orange berries lose points. You'll play a 3-minute round and then continue to a short survey.</p>
+        <div class="center"><button id="startTutorialBtn">Start Tutorial</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="gameScreen" class="screen hidden">
+    <div id="arenaWrap">
+      <div id="tutorialBanner" class="hidden"></div>
+      <div id="arena"></div>
+      <div id="hud" class="hidden">
+        <div><strong>You</strong> <span style="color:#ef4444;">■</span>: <span id="youScore">0</span></div>
+        <div><strong>Partner</strong> <span style="color:#3b82f6;">■</span>: <span id="botScore">0</span></div>
+      </div>
+      <div id="timer" class="hidden">05:00</div>
+      <div id="overlayMsg"></div>
+    </div>
+  </div>
+<!-- Ready Screen -->
+<div id="readyScreen" class="screen hidden">
+  <div class="panel">
+    <div class="column center">
+      <h1>STOP!</h1>
+      <p><strong>Please let the experimenter know that you are ready to begin.</strong></p>
+      <p>Do not click the PLAY button until the experimenter tells you to.</p>
+      <button id="playBtn">PLAY</button>
+    </div>
+  </div>
+</div>
+  <!-- End Screen -->
+  <div id="endScreen" class="screen hidden">
+    <div id="endWrap">
+      <h2>Time's up!</h2>
+      <div class="muted">Here are your results:</div>
+      <div class="spacer"></div>
+      <div class="row" style="display:flex;gap:12px;">
+        <div class="card" style="flex:1;">
+          <div><strong>You</strong></div>
+          <div class="statGrid">
+            <div class="card"><div class="label">Purple berries</div><div class="value" id="endYouPurple">0</div></div>
+            <div class="card"><div class="label">Orange berries</div><div class="value" id="endYouOrange">0</div></div>
+            <div class="card"><div class="label">Idle time</div><div class="value" id="endYouIdle">0s</div></div>
+            <div class="card"><div class="label">Your score</div><div class="value" id="endYouScore">0</div></div>
+          </div>
+        </div>
+        <div class="card" style="flex:1;">
+          <div><strong>Partner</strong></div>
+          <div class="statGrid">
+            <div class="card"><div class="label">Purple berries</div><div class="value" id="endBotPurple">0</div></div>
+            <div class="card"><div class="label">Orange berries</div><div class="value" id="endBotOrange">0</div></div>
+            <div class="card"><div class="label">Idle time</div><div class="value" id="endBotIdle">0s</div></div>
+            <div class="card"><div class="label">Partner score</div><div class="value" id="endBotScore">0</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div class="card"><div class="label">Combined total</div><div class="value" id="endCombined">0</div></div>
+      <div class="spacer"></div>
+      <div class="muted">Please click the arrow to return to the survey.</div>
+      <div id="toSurveyBtn" class="arrowBtn" title="Continue">➜</div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // ===== Config & constants =====
+  const ARENA_W = 960, ARENA_H = 600;
+  const PLAYER_SPEED = 130;
+  const BOT_SPEEDS = {
+  lazy: randInt(85,95),
+  mean: randInt(125,135),
+  control: randInt(125,135)
+};
+  const BUSH_COUNT = 24;
+  const BUSH_RADIUS = 25;
+  const BERRY_RADIUS = 6;
+  const ENTITY_HALF = 9;
+  const MIN_PLAYER_BUSH_DIST = BUSH_RADIUS + ENTITY_HALF + 10;
+  const BERRY_SPAWN_INTERVAL_MS = 300; // fast spawn
+  const GAME_LENGTH_SEC = 180;
+  const COUNTDOWN_SEC = 3;
+  const QUALTRICS_BASE_URL = "https://ufl.qualtrics.com/jfe/form/SV_3r9mYZ6jgxzxbsa";
+
+  // Get participant ID passed in from Part 1 Qualtrics
+  const incomingParams = new URLSearchParams(window.location.search);
+  const participantId = incomingParams.get('id') || '';
+  
+  // Berry expiry
+  const BERRY_MIN_TTL = 20;  // seconds
+  const BERRY_MAX_TTL = 40;  // seconds
+  const BERRY_CULL_PERIOD = 2; // seconds
+
+  // Watchdogs / anti-stall
+  const PROGRESS_CHECK_MS = 800;   // if no progress in this window, re-steer
+  const FORCED_WANDER_MS = 600;    // duration of forced drift when stuck
+  const OFF_BUSH_NUDGE_MS = 500;   // quick nudge off bush before true idle
+  const OFF_BUSH_MARGIN = 8;
+
+  // Elements
+  const introScreen = document.getElementById('introScreen');
+  const startTutorialBtn = document.getElementById('startTutorialBtn');
+  const gameScreen = document.getElementById('gameScreen');
+  const readyScreen = document.getElementById('readyScreen');
+  const playBtn = document.getElementById('playBtn');
+  const arenaWrap = document.getElementById('arenaWrap');
+  const arena = document.getElementById('arena');
+  const hud = document.getElementById('hud');
+  const timerEl = document.getElementById('timer');
+  const overlayMsg = document.getElementById('overlayMsg');
+  const endScreen = document.getElementById('endScreen');
+  const toSurveyBtn = document.getElementById('toSurveyBtn');
+  const youScoreEl = document.getElementById('youScore');
+  const botScoreEl = document.getElementById('botScore');
+  const tutorialBanner = document.getElementById('tutorialBanner');
+
+  // End stats
+  const endYouPurple = document.getElementById('endYouPurple');
+  const endYouOrange = document.getElementById('endYouOrange');
+  const endYouIdle = document.getElementById('endYouIdle');
+  const endYouScore = document.getElementById('endYouScore');
+  const endBotPurple = document.getElementById('endBotPurple');
+  const endBotOrange = document.getElementById('endBotOrange');
+  const endBotIdle = document.getElementById('endBotIdle');
+  const endBotScore = document.getElementById('endBotScore');
+  const endCombined = document.getElementById('endCombined');
+
+  // State
+  let state = 'intro';
+  let keys = { w:false, a:false, s:false, d:false, space:false };
+  let lastTime = performance.now();
+  let rafId = null;
+  let berrySpawnIntervalId = null;
+  let berryCullIntervalId = null;
+  let countdownIntervalId = null;
+  let gameTimeLeft = GAME_LENGTH_SEC;
+  let countdownLeft = COUNTDOWN_SEC;
+  let condition = null;
+
+  // Entities
+  const player = { x: ARENA_W/2 - 100, y: ARENA_H/2, vx:0, vy:0, el:null, score:0, purple:0, orange:0, idleTime:0, movedDist:0, lastPos:null };
+  const bot = { x: ARENA_W/2 + 100, y: ARENA_H/2, vx:0, vy:0, el:null, score:0, purple:0, orange:0, idleTime:0, target:null, mode:'idle', modeUntil:0, workUntil:0, restUntil: 0, collectedCount:0, lastMoveTs: performance.now(), canCollect:true, targets:null, lastProgressCheck: performance.now(), prevDistToTarget: Infinity, wanderUntil:0, wanderVX:0, wanderVY:0, reactionUntil: 0, retargetDelay: 0};
+
+  // Bushes
+  const bushes = [];
+
+  // ===== Utils =====
+  function show(el){ el.classList.remove('hidden'); }
+  function hide(el){ el.classList.add('hidden'); }
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  function dist2(x1,y1,x2,y2){ const dx=x2-x1, dy=y2-y1; return dx*dx+dy*dy; }
+  function dist(x1,y1,x2,y2){ return Math.hypot(x2-x1,y2-y1); }
+  function fmtTime(sec){ sec = Math.max(0, Math.floor(sec)); const m = Math.floor(sec/60).toString().padStart(2,'0'); const s = (sec%60).toString().padStart(2,'0'); return `${m}:${s}`; }
+  function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+  function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+  function createEntityEl(id, className){ const el = document.createElement('div'); el.id = id||''; el.className = `entity ${className||''}`.trim(); arena.appendChild(el); return el; }
+  function setEntityPos(ent){ if (!ent.el) return; ent.el.style.left = `${ent.x}px`; ent.el.style.top = `${ent.y}px`; }
+function playerTotalBerries(){
+  return player.purple + player.orange;
+}
+  function botDynamicTarget(){
+  const p = playerTotalBerries();
+
+  if (condition === 'lazy'){
+    return Math.floor(p * 0.6);
+  }
+
+  if (condition === 'control'){
+    return Math.floor(p * 1.0);
+  }
+
+  if (condition === 'mean'){
+    return Math.floor(p * 1.3);
+  }
+
+  return p;
+}
+  // ===== Bush helpers =====
+  function isOnBush(x,y){
+     
+    for (const b of bushes){
+      if (dist(x,y,b.x,b.y) < (BUSH_RADIUS + OFF_BUSH_MARGIN)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  function nudgeOffBush(ent, speed, ms){
+
+    // Move straight away from the nearest bush for a short period
+    let nearest = null, best = Infinity;
+    for (const b of bushes){
+      const d = dist(ent.x, ent.y, b.x, b.y);
+      if (d < best){ best = d; nearest = b; }
+    }
+    if (!nearest) return;
+    const dx = ent.x - nearest.x, dy = ent.y - nearest.y;
+    let len = Math.hypot(dx,dy);
+    if (len < 0.001){ // same center, pick random
+      const ang = Math.random()*Math.PI*2;
+      ent.vx = Math.cos(ang)*speed*0.6;
+      ent.vy = Math.sin(ang)*speed*0.6;
+    } else {
+      ent.vx = (dx/len) * speed * 0.7;
+      ent.vy = (dy/len) * speed * 0.7;
+    }
+    ent._offBushUntil = performance.now() + ms;
+  }
+
+  // ===== Bush & Berry management =====
+  function createBush(x,y){
+    const el = document.createElement('div'); el.className = 'bush'; el.style.left = `${x}px`; el.style.top = `${y}px`; arena.appendChild(el);
+    return { x,y, el, berries: [], maxBerries: randInt(2,3) };
+  }
+
+  function clearBushes(){
+    while (bushes.length) {
+      const b = bushes.pop();
+      for (const slot of b.berries){
+        if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
+      }
+      if (b.el && b.el.parentNode) b.el.parentNode.removeChild(b.el);
+    }
+  }
+
+  function spawnBushes(count){
+    clearBushes();
+    const minMargin = 36;
+    const minDist2 = 70*70;
+    let tries = 0;
+    while (bushes.length < count && tries < count*400){
+      tries++;
+      const x = randInt(minMargin, ARENA_W-minMargin);
+      const y = randInt(minMargin, ARENA_H-minMargin);
+      let ok = true;
+      for (const b of bushes){
+        if (dist2(x,y,b.x,b.y) < minDist2){ ok = false; break; }
+      }
+      if (ok){
+        bushes.push(createBush(x,y));
+      }
+    }
+  }
+
+  // ===== Berry helpers =====
+  function berryPositionsInBush(bush){
+    return bush.berries.filter(s => s.el).map(s => [s.rx, s.ry]);
+  }
+  function canPlaceAt(bush, rx, ry){
+    const existing = berryPositionsInBush(bush);
+    for (const [ex,ey] of existing){
+      if (Math.hypot(rx-ex, ry-ey) < (BERRY_RADIUS*3)) return false;
+    }
+    const dx = rx - 25, dy = ry - 25;
+    if (Math.hypot(dx,dy) > 20) return false;
+    return true;
+  }
+
+  function spawnBerryOnBush(bush, color){
+    const current = bush.berries.filter(s => s.el).length;
+    if (current >= bush.maxBerries) return false;
+    for (let i=0;i<24;i++){
+      const angle = Math.random()*Math.PI*2;
+      const rr = 6 + Math.random()*12;
+      const rx = 25 + Math.cos(angle)*rr;
+      const ry = 25 + Math.sin(angle)*rr;
+      if (!canPlaceAt(bush, rx, ry)) continue;
+      const dot = document.createElement('div');
+      dot.className = `berry ${color}`;
+      dot.style.left = `${rx}px`;
+      dot.style.top = `${ry}px`;
+      bush.el.appendChild(dot);
+      const ttl = (BERRY_MIN_TTL + Math.random()*(BERRY_MAX_TTL - BERRY_MIN_TTL)) * 1000;
+      const born = performance.now();
+      bush.berries.push({ color, el: dot, rx, ry, born, ttl });
+      return true;
+    }
+    return false;
+  }
+
+  function spawnInitialBerries(){
+    for (const b of bushes){
+      while (b.berries.filter(s => s.el).length < b.maxBerries){
+        spawnBerryOnBush(b, Math.random() < 0.7 ? 'purple' : 'orange');
+      }
+    }
+  }
+
+  function spawnRandomBerry(){
+    const nonFull = bushes.filter(b => b.berries.filter(s=>s.el).length < b.maxBerries);
+    if (!nonFull.length) return;
+    const target = pick(nonFull);
+    const color = Math.random() < 0.6 ? 'purple' : 'orange';
+    spawnBerryOnBush(target, color);
+  }
+
+  function cullExpiredBerries(){
+    const now = performance.now();
+    for (const b of bushes){
+      for (const slot of b.berries){
+        if (!slot.el || !slot.color) continue;
+        if (now - slot.born > slot.ttl){
+          if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
+          slot.el = null; slot.color = null;
+        }
+      }
+    }
+  }
+
+  function clearAllBerries(){
+    for (const b of bushes){
+      for (const slot of b.berries){
+        if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
+        slot.el = null; slot.color = null;
+      }
+      b.berries = [];
+    }
+  }
+
+  // ===== Visual score blips =====
+  function floatScore(x,y,val){
+    const el = document.createElement('div');
+    el.className = `floatText ${val>0?'floatPlus':'floatMinus'}`;
+    el.textContent = val>0?'+1':'-1';
+    el.style.left = `${x}px`; el.style.top = `${y}px`;
+    arena.appendChild(el);
+    setTimeout(()=>{ if (el && el.parentNode) el.parentNode.removeChild(el); }, 1000);
+  }
+
+  function updateHUD(){ youScoreEl.textContent = player.score; botScoreEl.textContent = bot.score; timerEl.textContent = fmtTime(gameTimeLeft); }
+  function randCondition(){ return pick(['lazy','mean','control']); }
+
+  // ===== Input =====
+  function onKey(e,down){
+    const k = e.key.toLowerCase();
+    if (['w','a','s','d',' '].includes(k)) e.preventDefault();
+    if (k==='w') keys.w = down;
+    if (k==='a') keys.a = down;
+    if (k==='s') keys.s = down;
+    if (k==='d') keys.d = down;
+    if (k===' ') keys.space = down;
+
+
+  }
+  window.addEventListener('keydown', e => onKey(e,true));
+  window.addEventListener('keyup', e => onKey(e,false));
+
+  function updatePlayerVelocity(){
+    let vx=0, vy=0;
+    if (keys.w) vy -=1;
+    if (keys.s) vy +=1;
+    if (keys.a) vx -=1;
+    if (keys.d) vx +=1;
+    if (vx!==0 || vy!==0){
+      const len = Math.hypot(vx,vy);
+      vx/=len; vy/=len;
+      player.vx = vx * PLAYER_SPEED;
+      player.vy = vy * PLAYER_SPEED;
+    } else { player.vx = 0; player.vy = 0; }
+  }
+
+  // ===== Targets per condition =====
+  function setupBotTargets(){
+    if (condition === 'lazy'){
+      const total = randInt(45,55);
+      const orange = randInt(0,3);
+      const purple = Math.max(0, total - orange);
+      return { total, purple, orange };
+    } else if (condition === 'mean'){
+      const total = 89;
+      const orange = randInt(45,55);
+      const purple = Math.max(0, total - orange);
+      return { total, purple, orange };
+    } else {
+      const targetScore = randInt(85,100);
+      const orange = randInt(5,12);
+      const purple = targetScore + orange;
+      const total = purple + orange;
+      return { total, purple, orange };
+    }
+  }
+
+  // ===== Berry selection helpers =====
+  function allVisibleBerries(){
+    const list = [];
+    for (const b of bushes){
+      for (const slot of b.berries){
+        if (slot.el && slot.color) list.push({ bush:b, slot, color:slot.color });
+      }
+    }
+    return list;
+  }
+function nearestBerryOfColor(color, fromX, fromY){
+  const list = allVisibleBerries().filter(x => x.color === color);
+  if (!list.length) return null;
+
+  list.sort((a,b) =>
+    dist2(fromX,fromY,a.bush.x,a.bush.y) -
+    dist2(fromX,fromY,b.bush.x,b.bush.y)
+  );
+
+  return list[0];
+}
+  function nearestOf(list, fromX, fromY, predicate){
+    const filtered = predicate ? list.filter(predicate) : list.slice();
+    if (!filtered.length) return null;
+    filtered.sort((a,b) => dist2(fromX,fromY,a.bush.x,a.bush.y) - dist2(fromX,fromY,b.bush.x,b.bush.y));
+
+    return filtered[0];
+  }
+
+  // ===== Bot targeting by condition =====
+  function pickBotTarget(){
+
+    const list = allVisibleBerries();
+
+    if (!list.length) return null;
+
+   if (bot.collectedCount >= botDynamicTarget()){
+  return null;
+}
+
+ if (condition === 'mean'){
+
+  const nearestPurple = nearestBerryOfColor('purple', bot.x, bot.y);
+  const nearestOrange = nearestBerryOfColor('orange', bot.x, bot.y);
+
+  // 40% of the time deliberately sabotage a nearby purple
+  if (nearestPurple && nearestOrange && Math.random() < 0.40){
+    return nearestOrange;
+  }
+
+  // Otherwise behave normally
+  if (bot.orange < bot.targets.orange){
+    return nearestOrange || nearestPurple;
+  }
+
+  return nearestPurple || nearestOrange;
+    } else if (condition === 'lazy'){
+
+  const nearby = list.filter(x =>
+    dist(bot.x, bot.y, x.bush.x, x.bush.y) < 180 &&
+    x.color === 'purple'
+  );
+
+  return nearby.length
+    ? nearestOf(nearby, bot.x, bot.y)
+    : null;
+} else {
+      if (bot.orange < bot.targets.orange && Math.random() < 0.15){
+        return nearestOf(list, bot.x, bot.y, x => x.color === 'orange') || nearestOf(list, bot.x, bot.y, x => x.color === 'purple');
+      }
+      return nearestOf(list, bot.x, bot.y, x => x.color === 'purple') || nearestOf(list, bot.x, bot.y, () => true);
+    }
+  }
+
+  // ===== Bot AI & movement =====
+function updateBotAI(dt, now){
+
+  if (state !== 'playing') return;
+  const speed = BOT_SPEEDS[condition] || 100;
+updateBotCollectPermission();
+  // Human reaction delay
+  if (now < bot.reactionUntil){
+    bot.vx = 0;
+    bot.vy = 0;
+    return;
+  }
+
+  // If we're nudging off a bush, honor that first
+  if (bot._offBushUntil && now < bot._offBushUntil){
+    return;
+  }
+
+    // If we're nudging off a bush, honor that first
+    if (bot._offBushUntil && now < bot._offBushUntil){
+      return;
+    }
+
+    // Manage lazy pauses with off-bush safety
+   if (condition === 'lazy'){
+
+  if (bot.mode === 'work' && now > bot.workUntil){
+    bot.mode = 'rest';
+    bot.restUntil = now + randInt(3000, 7000);
+    bot.vx = 0;
+    bot.vy = 0;
+    bot.target = null;
+  }
+
+  if (bot.mode === 'rest' && now > bot.restUntil){
+    bot.mode = 'work';
+    bot.workUntil = now + randInt(4000, 8000);
+  }
+
+  if (bot.mode === 'rest'){
+    if (isOnBush(bot.x, bot.y)){
+      nudgeOffBush(bot, speed, OFF_BUSH_NUDGE_MS);
+    }
+    return;
+  }
+
+}
+
+  // Mean/control: always target or wander
+if (!bot.target || !bot.target.slot || !bot.target.slot.el){
+  bot.target = pickBotTarget();
+
+  // Human-like reaction delay when choosing a new target
+  if (bot.target){
+    bot.reactionUntil = now + randInt(200, 700);
+  }
+}
+
+  if (bot.target && Math.random() < 0.04){
+  const newTarget = pickBotTarget();
+  if (newTarget){
+    bot.target = newTarget;
+    bot.reactionUntil = now + randInt(150, 400);
+  }
+}
+
+    // If reached target totals, just roam (and keep off bushes)
+    if (bot.collectedCount >= botDynamicTarget() || !bot.target){
+      // Forced wander chunk if previously stuck
+      if (now < bot.wanderUntil){
+        bot.vx = bot.wanderVX; bot.vy = bot.wanderVY;
+      } else {
+        const ang = Math.random()*Math.PI*2;
+        bot.vx = Math.cos(ang)*(speed*0.6);
+        bot.vy = Math.sin(ang)*(speed*0.6);
+        bot.wanderUntil = now + randInt(400, 900);
+        bot.wanderVX = bot.vx; bot.wanderVY = bot.vy;
+      }
+      if (isOnBush(bot.x, bot.y)){
+        nudgeOffBush(bot, speed, OFF_BUSH_NUDGE_MS);
+      }
+      return;
+    }
+
+  // Navigate to target
+const tx = bot.target.bush.x - 25 + bot.target.slot.rx;
+const ty = bot.target.bush.y - 25 + bot.target.slot.ry;
+const dx = tx - bot.x;
+const dy = ty - bot.y;
+const d = Math.hypot(dx,dy);
+
+if (d > 1){
+const noise = 0.06;
+  bot.vx = (dx / d) * speed + (Math.random() - 0.5) * speed * noise;
+  bot.vy = (dy / d) * speed + (Math.random() - 0.5) * speed * noise;
+} else {
+  bot.vx = 0;
+  bot.vy = 0;
+}
+    // Always-active watchdog for mean bot
+    if (condition === 'mean'){
+      // Check progress toward target
+      const distNow = Math.hypot(tx - bot.x, ty - bot.y);
+      if (now - bot.lastProgressCheck > PROGRESS_CHECK_MS){
+        if (distNow > bot.prevDistToTarget - 2){ // little or no progress
+          // Force a wander burst
+          const ang = Math.random()*Math.PI*2;
+          bot.wanderVX = Math.cos(ang)*(speed*0.85);
+          bot.wanderVY = Math.sin(ang)*(speed*0.85);
+          bot.vx = bot.wanderVX; bot.vy = bot.wanderVY;
+          bot.wanderUntil = now + FORCED_WANDER_MS;
+
+          // Retarget next tick
+          bot.target = pickBotTarget();
+        }
+        bot.prevDistToTarget = distNow;
+        bot.lastProgressCheck = now;
+      }
+
+      // If somehow stopped, kick it
+      const moving = Math.hypot(bot.vx, bot.vy) > 1;
+      if (!moving){
+        const ang = Math.random()*Math.PI*2;
+        bot.vx = Math.cos(ang)*(speed*0.8);
+        bot.vy = Math.sin(ang)*(speed*0.8);
+      }
+    }
+  }
+
+  // ===== Per-berry collection =====
+  function updateBotCollectPermission(){
+    bot.canCollect = bot.collectedCount < botDynamicTarget();
+  }
+
+  function checkCollectEntity(ent, who){
+    const isPlayer = (who === 'player');
+    const isBot = (who === 'bot');
+    for (const b of bushes){
+      for (const slot of b.berries){
+        if (!slot.el || !slot.color) continue;
+        const worldX = b.x + (slot.rx - 25);
+        const worldY = b.y + (slot.ry - 25);
+        const d = dist(ent.x, ent.y, worldX, worldY);
+        if (d <= (BERRY_RADIUS + ENTITY_HALF)){
+
+  if (isBot && !bot.canCollect) continue;
+
+  // Human-like hesitation before collecting
+ if (isBot && Math.random() < 0.05){
+  bot.vx *= 0.3;
+  bot.vy *= 0.3;
+}
+  if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
+
+          if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
+          const clr = slot.color;
+          slot.color = null; slot.el = null;
+          if (isPlayer){
+            if (clr === 'purple'){ player.purple++; player.score += 1; floatScore(ent.x, ent.y, +1); }
+            else { player.orange++; player.score -= 1; floatScore(ent.x, ent.y, -1); }
+          } else {
+            if (clr === 'purple'){ bot.purple++; bot.score += 1; floatScore(ent.x, ent.y, +1); }
+            else { bot.orange++; bot.score -= 1; floatScore(ent.x, ent.y, -1); }
+            bot.collectedCount++;
+            updateBotCollectPermission();
+          }
+          updateHUD();
+        }
+      }
+    }
+  }
+
+  // ===== Game loop pieces =====
+  function updatePositions(dt){
+    // Player
+    updatePlayerVelocity();
+    const p = player;
+    const newPx = clamp(p.x + p.vx * dt, ENTITY_HALF, ARENA_W - ENTITY_HALF);
+    const newPy = clamp(p.y + p.vy * dt, ENTITY_HALF, ARENA_H - ENTITY_HALF);
+    if (p.lastPos){ p.movedDist += dist(p.lastPos.x, p.lastPos.y, newPx, newPy); }
+    p.lastPos = {x:newPx, y:newPy};
+    if (p.vx === 0 && p.vy === 0) p.idleTime += dt;
+    p.x = newPx; p.y = newPy;
+    setEntityPos(p);
+
+    if (state === 'playing'){
+      const now = performance.now();
+      updateBotAI(dt, now);
+      const b = bot;
+      const newBx = clamp(b.x + b.vx * dt, ENTITY_HALF, ARENA_W - ENTITY_HALF);
+      const newBy = clamp(b.y + b.vy * dt, ENTITY_HALF, ARENA_H - ENTITY_HALF);
+      if (b.vx === 0 && b.vy === 0) b.idleTime += dt;
+      b.x = newBx; b.y = newBy;
+      setEntityPos(b);
+      checkCollectEntity(bot, 'bot');
+    }
+    checkCollectEntity(player, 'player');
+  }
+
+  function gameLoop(ts){
+    const dt = Math.min(0.05, (ts - lastTime)/1000);
+    lastTime = ts;
+
+    if (state === 'tutorial_move' || state === 'tutorial_collect' || state === 'playing'){
+      updatePositions(dt);
+    }
+
+    if (state === 'tutorial_move'){
+      if (player.movedDist > 40){
+        startTutorialCollect();
+      }
+} else if (state === 'tutorial_collect'){
+  if (player.purple >= 1){
+    state = 'ready_waiting';
+
+    // Stop movement while waiting for the experimenter
+    keys.w = false;
+    keys.a = false;
+    keys.s = false;
+    keys.d = false;
+    keys.space = false;
+
+    hide(gameScreen);
+    show(readyScreen);
+  }
+}
+
+    rafId = requestAnimationFrame(gameLoop);
+  }
+
+  // ===== Flow =====
+  startTutorialBtn.addEventListener('click', () => {
+    state = 'tutorial_move';
+    hide(introScreen);
+    show(gameScreen);
+    startTutorial();
+  });
+playBtn.addEventListener('click', () => {
+  if (state !== 'ready_waiting') return;
+
+  hide(readyScreen);
+  show(gameScreen);
+  startGame();
+});
+  function resetEntities(){
+    arena.innerHTML = '';
+    arena.appendChild(hud);
+    arena.appendChild(timerEl);
+    arena.appendChild(overlayMsg);
+    arenaWrap.appendChild(tutorialBanner);
+
+    player.el = createEntityEl('player','');
+    bot.el = createEntityEl('bot','');
+    setEntityPos(player); setEntityPos(bot);
+  }
+
+  function showBanner(text){ tutorialBanner.textContent = text; show(tutorialBanner); }
+
+  function startTutorial(){
+    hide(hud); hide(timerEl);
+    overlayMsg.textContent = ''; overlayMsg.className = '';
+    player.x = ARENA_W/2 - 120; player.y = ARENA_H/2;
+    bot.x = ARENA_W/2 + 120; bot.y = ARENA_H/2;
+    player.vx = player.vy = 0; bot.vx = bot.vy = 0;
+    player.movedDist = 0; player.lastPos = null;
+    resetEntities();
+    bot.el.style.display = 'none';
+    clearBushes();
+    showBanner('Use WASD to move around.');
+
+    lastTime = performance.now();
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(gameLoop);
+  }
+
+  function startTutorialCollect(){
+    state = 'tutorial_collect';
+    clearBushes();
+    const b = createBush(ARENA_W/2 + 80, ARENA_H/2);
+    bushes.push(b);
+    spawnBerryOnBush(b, 'purple');
+    if (dist(player.x, player.y, b.x, b.y) < MIN_PLAYER_BUSH_DIST){
+      player.x = ARENA_W/2 - 140; player.y = ARENA_H/2 - 60;
+      setEntityPos(player);
+    }
+    showBanner('Move over and collect the purple berry.');
+  }
+
+  function findSafeSpawn(preferX, preferY){
+    let x = preferX, y = preferY;
+    function safe(x,y){
+      for (const b of bushes){
+        if (dist(x,y,b.x,b.y) < MIN_PLAYER_BUSH_DIST) return false;
+      }
+      return (x>=ENTITY_HALF && x<=ARENA_W-ENTITY_HALF && y>=ENTITY_HALF && y<=ARENA_H-ENTITY_HALF);
+    }
+    if (safe(x,y)) return {x,y};
+    for (let r=30;r<=200;r+=15){
+      for (let a=0;a<Math.PI*2;a+=Math.PI/8){
+        const tx = clamp(preferX + Math.cos(a)*r, ENTITY_HALF, ARENA_W-ENTITY_HALF);
+        const ty = clamp(preferY + Math.sin(a)*r, ENTITY_HALF, ARENA_H-ENTITY_HALF);
+        if (safe(tx,ty)) return {x:tx,y:ty};
+      }
+    }
+    return {x: ARENA_W/2, y: ARENA_H/2};
+  }
+
+  function startGame(){
+    state = 'pregame';
+    show(hud); show(timerEl);
+    hide(tutorialBanner);
+
+    player.score = player.purple = player.orange = 0; player.idleTime = 0; player.movedDist = 0; player.lastPos = null;
+    bot.score = bot.purple = bot.orange = 0; bot.idleTime = 0; bot.collectedCount = 0; bot.lastMoveTs = performance.now(); bot.canCollect = true;
+    bot.target = null; bot.prevDistToTarget = Infinity; bot.lastProgressCheck = performance.now(); bot.wanderUntil = 0;
+
+    condition = randCondition();
+
+    resetEntities();
+    bot.el.style.display = '';
+
+    spawnBushes(BUSH_COUNT);
+    clearAllBerries();
+    spawnInitialBerries();
+
+    const pSpawn = findSafeSpawn(ARENA_W/2 - 150, ARENA_H/2);
+    const bSpawn = findSafeSpawn(ARENA_W/2 + 150, ARENA_H/2);
+    player.x = pSpawn.x; player.y = pSpawn.y;
+    bot.x = bSpawn.x; bot.y = bSpawn.y;
+    setEntityPos(player); setEntityPos(bot);
+
+    bot.targets = setupBotTargets();
+    bot.mode = 'work';
+bot.workUntil = performance.now() + randInt(4000,8000);
+    updateBotCollectPermission();
+
+    countdownLeft = COUNTDOWN_SEC;
+    overlayMsg.textContent = countdownLeft.toString(); overlayMsg.className = 'show';
+    updateHUD();
+    gameTimeLeft = GAME_LENGTH_SEC;
+
+    if (countdownIntervalId) clearInterval(countdownIntervalId);
+    countdownIntervalId = setInterval(() => {
+      countdownLeft--;
+      if (countdownLeft > 0){
+        overlayMsg.textContent = countdownLeft.toString();
+      } else {
+        clearInterval(countdownIntervalId);
+        overlayMsg.textContent = "GO!";
+        setTimeout(()=>{ overlayMsg.className = ''; overlayMsg.textContent = ''; }, 700);
+        beginPlay();
+      }
+    }, 1000);
+  }
+
+  function beginPlay(){
+    state = 'playing';
+    if (berrySpawnIntervalId) clearInterval(berrySpawnIntervalId);
+    berrySpawnIntervalId = setInterval(spawnRandomBerry, BERRY_SPAWN_INTERVAL_MS);
+
+    if (berryCullIntervalId) clearInterval(berryCullIntervalId);
+    berryCullIntervalId = setInterval(cullExpiredBerries, BERRY_CULL_PERIOD*1000);
+
+    const timerInt = setInterval(() => {
+      if (state !== 'playing'){ clearInterval(timerInt); return; }
+      gameTimeLeft--;
+      updateHUD();
+      if (gameTimeLeft <= 0){
+        clearInterval(timerInt);
+        endGame();
+      }
+    }, 1000);
+  }
+
+  function endGame(){
+    state = 'ended';
+    if (berrySpawnIntervalId) clearInterval(berrySpawnIntervalId);
+    if (berryCullIntervalId) clearInterval(berryCullIntervalId);
+    if (countdownIntervalId) clearInterval(countdownIntervalId);
+
+    hide(gameScreen);
+    show(endScreen);
+
+    endYouPurple.textContent = player.purple;
+    endYouOrange.textContent = player.orange;
+    endYouIdle.textContent = `${Math.round(player.idleTime)}s`;
+    endYouScore.textContent = player.score;
+
+    endBotPurple.textContent = bot.purple;
+    endBotOrange.textContent = bot.orange;
+    endBotIdle.textContent = `${Math.round(bot.idleTime)}s`;
+    endBotScore.textContent = bot.score;
+
+    endCombined.textContent = player.score + bot.score;
+
+    toSurveyBtn.classList.remove('show');
+    setTimeout(()=>{ toSurveyBtn.classList.add('show'); }, 10000);
+  }
+
+  toSurveyBtn.addEventListener('click', () => {
+    if (!toSurveyBtn.classList.contains('show')) return;
+    const params = new URLSearchParams({
+      id: participantId,
+      condition: condition || '',
+      player_orange: player.orange.toString(),
+      player_purple: player.purple.toString(),
+      player_score: player.score.toString(),
+      player_idle_sec: Math.round(player.idleTime).toString(),
+      partner_orange: bot.orange.toString(),
+      partner_purple: bot.purple.toString(),
+      partner_score: bot.score.toString(),
+      combined_score: (player.score + bot.score).toString()
+    });
+    const url = `${QUALTRICS_BASE_URL}?${params.toString()}`;
+    window.location.href = url;
+  });
+
+  // ===== Init =====
+  function init(){
+    arenaWrap.style.width = ARENA_W + 'px';
+    arenaWrap.style.height = ARENA_H + 'px';
+    lastTime = performance.now();
+    rafId = requestAnimationFrame(gameLoop);
+  }
+  init();
+})();
+</script>
+
+</body>
+</html>
