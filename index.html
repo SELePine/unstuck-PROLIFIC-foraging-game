@@ -150,11 +150,14 @@
   const BERRY_SPAWN_INTERVAL_MS = 300; // fast spawn
   const GAME_LENGTH_SEC = 180;
   const COUNTDOWN_SEC = 3;
-  const QUALTRICS_BASE_URL = "https://ufl.qualtrics.com/jfe/form/SV_3r9mYZ6jgxzxbsa";
+  const QUALTRICS_BASE_URL = "https://ufl.qualtrics.com/jfe/form/SV_3Ibxd8CJi49H1c2";
 
-  // Get participant ID passed in from Part 1 Qualtrics
-  const incomingParams = new URLSearchParams(window.location.search);
-  const participantId = incomingParams.get('id') || '';
+  // Get Prolific ID and other info passed in from Part 1 Qualtrics
+const incomingParams = new URLSearchParams(window.location.search);
+
+const prolificPid = incomingParams.get('PROLIFIC_PID') || '';
+const studyId = incomingParams.get('STUDY_ID') || '';
+const sessionId = incomingParams.get('SESSION_ID') || '';
   
   // Berry expiry
   const BERRY_MIN_TTL = 20;  // seconds
@@ -924,23 +927,27 @@ bot.workUntil = performance.now() + randInt(4000,8000);
     setTimeout(()=>{ toSurveyBtn.classList.add('show'); }, 10000);
   }
 
-  toSurveyBtn.addEventListener('click', () => {
-    if (!toSurveyBtn.classList.contains('show')) return;
-    const params = new URLSearchParams({
-      id: participantId,
-      condition: condition || '',
-      player_orange: player.orange.toString(),
-      player_purple: player.purple.toString(),
-      player_score: player.score.toString(),
-      player_idle_sec: Math.round(player.idleTime).toString(),
-      partner_orange: bot.orange.toString(),
-      partner_purple: bot.purple.toString(),
-      partner_score: bot.score.toString(),
-      combined_score: (player.score + bot.score).toString()
-    });
-    const url = `${QUALTRICS_BASE_URL}?${params.toString()}`;
-    window.location.href = url;
+toSurveyBtn.addEventListener('click', () => {
+  if (!toSurveyBtn.classList.contains('show')) return;
+
+  const params = new URLSearchParams({
+    PROLIFIC_PID: prolificPid,
+    STUDY_ID: studyId,
+    SESSION_ID: sessionId,
+    condition: condition || '',
+    player_orange: player.orange.toString(),
+    player_purple: player.purple.toString(),
+    player_score: player.score.toString(),
+    player_idle_sec: Math.round(player.idleTime).toString(),
+    partner_orange: bot.orange.toString(),
+    partner_purple: bot.purple.toString(),
+    partner_score: bot.score.toString(),
+    combined_score: (player.score + bot.score).toString()
   });
+
+  const url = `${QUALTRICS_BASE_URL}?${params.toString()}`;
+  window.location.href = url;
+});
 
   // ===== Init =====
   function init(){
